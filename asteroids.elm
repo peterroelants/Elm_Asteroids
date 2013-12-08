@@ -51,6 +51,10 @@ import Text
 -- Types
 -------------------------------------------------
 -- All objects have a position, velocity, direction and diameter
+-- ObjState.x: position on the x-axis from the center
+-- ObjState.y: position on the y-axis from the center
+-- ObjState.v: velocity in move v*pixelsPerSecond pixels per second
+-- ObjState.dir: direction, radians counterclockwise (0=right)
 type ObjState a = { a | x:Float, y:Float, v:Float, dir:Float, diam:Float }
 -- distinguish between the different objects in the field
 type ShipState = ObjState {timeLastBullet:Float}
@@ -63,6 +67,10 @@ type FieldState = { ship:ShipState ,
 data GameState = Lost Float | 
                  Won Float | 
                  Game FieldState
+
+
+pixelsPerSecond : Float
+pixelsPerSecond = 7
 
 -------------------------------------------------
 -- Represenatation
@@ -148,8 +156,11 @@ startShipState  = {x=0, y=0, v=0, dir=0, diam=8, timeLastBullet=0}
 startState : GameState
 startState = Game {ship=startShipState , 
                    asteroids=[
-                   {x=50, y=50, v=3, dir=1.1, diam=10},
-                   {x=-50, y=-50, v=4, dir=2.6, diam=20}],
+                   {x=100, y=100, v=4, dir=(degrees -177), diam=10},
+                   {x=50, y=50, v=4, dir=(degrees 91), diam=20},
+                   {x=-50, y=50, v=4, dir=(degrees 36), diam=20},
+                   {x=50, y=-50, v=4, dir=(degrees -348), diam=20},
+                   {x=-100, y=-100, v=4, dir=(degrees 198), diam=20}],
                    bullets=[]}
 
 updateGame : Input -> GameState -> GameState
@@ -173,7 +184,7 @@ updateObjects inp state =
   let (newShip, bullet) = shootBullet inp state.ship
   in bulletCollisions { 
   state | ship <- (shipUpdate inp newShip),
-                  asteroids <- map (\x -> (asteroidUpdate inp x)) state.asteroids,
+                  asteroids <- (map (\x -> (asteroidUpdate inp x)) (bounceAllAsteroids state.asteroids)),
                   bullets <- cons bullet (updateBullets inp state.bullets) }
 
 
@@ -213,8 +224,8 @@ isOutOfField state =
 
 updatePos : Input -> ObjState a -> ObjState a
 updatePos inp state = 
-    { state | x <- state.x + cos(state.dir) * state.v * inp.delta * 7 , 
-              y <- state.y + sin(state.dir) * state.v * inp.delta * 7 }
+    { state | x <- state.x + cos(state.dir) * state.v * inp.delta * pixelsPerSecond , 
+              y <- state.y + sin(state.dir) * state.v * inp.delta * pixelsPerSecond }
 
 updateVelocity : Input -> ObjState a -> ObjState a
 updateVelocity inp state = { state | v <- state.v + inp.y * inp.delta * 7 }
@@ -260,6 +271,56 @@ dist s1 s2 = sqrt( (s1.x-s2.x)^2 + (s1.y-s2.y)^2 )
 
 isEmpty : [a] -> Bool
 isEmpty l = (length l) == 0
+
+bounceAllAsteroids : [AsteroidState] -> [AsteroidState]
+bounceAllAsteroids a0s = fst (bounceAllAsteroidsWithAllAsteroids [] a0s)
+
+bounceAllAsteroidsWithAllAsteroids : [AsteroidState] -> [AsteroidState] -> ([AsteroidState], [AsteroidState])
+bounceAllAsteroidsWithAllAsteroids a0s a1s = 
+  case a1s of
+    (a1::a1stail) -> let (a1tailnew, a1n, _) =  bounceAsteroidWithAsteroids [] a1 a1stail
+                     in bounceAllAsteroidsWithAllAsteroids (a0s++[a1n]) a1tailnew
+    otherwise -> (a0s, [])
+
+bounceAsteroidWithAsteroids : [AsteroidState] -> AsteroidState -> [AsteroidState] -> ([AsteroidState], AsteroidState, [AsteroidState])
+bounceAsteroidWithAsteroids a0s a1 a2s = 
+  case a2s of
+    (a2::a2stail) -> let (a1n, a2n) = (checkAsteroidBounce a1 a2)
+                     in  bounceAsteroidWithAsteroids (a0s++[a2n]) a1n a2stail
+    otherwise -> (a0s, a1, [])
+
+checkAsteroidBounce : AsteroidState -> AsteroidState -> (AsteroidState , AsteroidState)
+checkAsteroidBounce a1 a2 = 
+  if | (objCollision a1 a2) -> (asteroidBounce a1 a2)
+     | otherwise -> (a1, a2)
+
+--asteroidBounce : AsteroidState -> AsteroidState -> (AsteroidState , AsteroidState)
+--asteroidBounce a1 a2 = 
+--  let colA = atan2 (a1.y - a2.y) (a1.x - a2.x) -- collision angle
+--  in let iv1x = a1.v * (cos (a1.dir - colA)) -- initial velocity a1 x
+--         iv1y = a1.v * (sin (a1.dir - colA)) -- initial velocity a1 y
+--         iv2x = a2.v * (cos (a2.dir - colA)) -- initial velocity a2 x
+--         iv2y = a2.v * (sin (a2.dir - colA)) -- initial velocity a2 y
+--     in let v1 = (sqrt (iv2x^2 + iv1y^2))
+--            v2 = (sqrt (iv1x^2 + iv2y^2))
+--            dir1 = (atan2 iv1y iv2x) + colA
+--            dir2 = (atan2 iv2y iv1x) + colA
+--        in ({a1 | v <- v1, dir <- dir1, x <- a1.x + cos(dir1) * v1 * 0.1, y <- a1.y + sin(dir1) * v1 * 0.1}, 
+--            {a2 | v <- v2, dir <- dir2, x <- a2.x + cos(dir2) * v2* 0.1, y <- a2.y + sin(dir2) * v2 * 0.1})
+
+asteroidBounce : AsteroidState -> AsteroidState -> (AsteroidState , AsteroidState)
+asteroidBounce a1 a2 = 
+  let colA = atan2 (a1.y - a2.y) (a1.x - a2.x) -- collision angle
+  in let iv1x = a1.v * (cos (a1.dir - colA)) -- initial velocity a1 x
+         iv1y = a1.v * (sin (a1.dir - colA)) -- initial velocity a1 y
+         iv2x = a2.v * (cos (a2.dir - colA)) -- initial velocity a2 x
+         iv2y = a2.v * (sin (a2.dir - colA)) -- initial velocity a2 y
+     in let v1 = (sqrt (iv2x^2 + iv1y^2))
+            v2 = (sqrt (iv1x^2 + iv2y^2))
+            dir1 = (atan2 iv1y iv2x) + colA
+            dir2 = (atan2 iv2y iv1x) + colA
+        in ({a1 | v <- v1, dir <- dir1}, 
+            {a2 | v <- v2, dir <- dir2})
 
 
 -------------------------------------------------
