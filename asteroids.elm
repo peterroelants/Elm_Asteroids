@@ -67,6 +67,7 @@ type FieldState = { ship:ShipState ,
                     bullets:[BulletState] }
 data GameState = Lost Float | 
                  Won Float | 
+                 Begin |
                  Game FieldState
 
 
@@ -88,6 +89,8 @@ playingField state = case state of
                                       endText "You Lost :("]
   Won time        -> collage 500 500 [rect 500 500 |> filled green, 
                                       endText "You Won :)"]
+  Begin           -> collage 500 500 [rect 500 500 |> filled blue, 
+                                      endText "- Ready to play -"]
   Game fieldstate -> collage 500 500 (listOfForms fieldstate)
 
 
@@ -143,10 +146,10 @@ input = sampleOn delta (Input <~ lift (toFloat  . .x) Keyboard.arrows
                                ~ lift (toFloat . .y) Keyboard.arrows
                                ~ Keyboard.space
                                ~ delta
-                               ~ (Random.float delta))
+                               ~ Random.float delta)
 
 stateSignal : Signal GameState 
-stateSignal = foldp updateGame  startState  input
+stateSignal = foldp updateGame  Begin  input
 
 -------------------------------------------------
 -- state and updates of state
@@ -159,34 +162,43 @@ lcg seed = let m = 2147483647
                x = floor(seed * 2147483647)
            in (toFloat (mod (a*x) m)) / (toFloat m)
 
-genRandList : Int -> Float -> [Float] -> [Float]
-genRandList len seed (r::rs) =
-  if | len == 0 -> (r::rs)
-     | otherwise -> let rnd = (lcg r)
-                    in (genRandList (len-1) rnd (rnd::r::rs))
+--genRandList : Int -> Float -> [Float] -> [Float]
+--genRandList len seed (r::rs) =
+--  if | len == 0 -> (r::rs)
+--     | otherwise -> let rnd = (lcg r)
+--                    in (genRandList (len-1) rnd (rnd::r::rs))
 
 startShipState  : ShipState 
 startShipState  = {x=0, y=0, v=0, dir=0, diam=8, timeLastBullet=0}
 
---rndStartState : Int -> Float -> GameState
---rndStartState nbOfAsteroids seed =
+rndStartState : Float -> GameState
+rndStartState seed =
+  let asteroids = rndAsteroids 20 seed []
+  in Game {ship=startShipState, 
+           asteroids=asteroids,
+           bullets=[]}
 
+rndAsteroids : Int -> Float -> [AsteroidState] -> [AsteroidState] 
+rndAsteroids nb seed ass =
+  if | nb == 0 -> ass
+     | otherwise -> let (a, rnd1) = rndAsteroid seed
+                    in rndAsteroids (nb-1) rnd1 (a::ass)
 
-rndAsteroid : Float -> AsteroidState
+rndAsteroid : Float -> (AsteroidState, Float)
 rndAsteroid seed = 
   let (pos1, rnd1) = rndPos seed
-  in let (pos2, rnd2) = rndPos rnd1
-     in let (v, rnd3) = rndRange 1 4 rnd2
-        in let (dirDeg, rnd4) = rndRange 0 360 rnd3
-           in let (diam, rnd5) = rndRange 5 30 rnd4
-              in {x=pos1, y=pos2, v=v, dir=(degrees dirDeg), diam=diam}
+      (pos2, rnd2) = rndPos rnd1
+      (v, rnd3) = rndRange 1 4 rnd2
+      (dirDeg, rnd4) = rndRange 0 360 rnd3
+      (diam, rnd5) = rndRange 5 30 rnd4
+  in ({x=pos1, y=pos2, v=v, dir=(degrees dirDeg), diam=diam}, rnd5)
 
 
 rndPos : Float -> (Float, Float)
 rndPos seed = 
   let (sgn, rnd1) = rndSgn seed
-  in let (pos, rnd2) = (rndRange 75 250 rnd1)
-     in ((pos*sgn), rnd2)
+      (pos, rnd2) = (rndRange 75 250 rnd1)
+  in ((pos*sgn), rnd2)
 
 rndSgn : Float -> (Float, Float)
 rndSgn seed = 
@@ -211,10 +223,12 @@ startState = Game {ship=startShipState ,
 
 updateGame : Input -> GameState -> GameState
 updateGame inp state = case state of
-  Lost time -> if | inp.space && time > 1 -> startState
+  Lost time -> if | inp.space && time > 1 -> (rndStartState inp.rnd)
                   | otherwise -> Lost (time + inp.delta)
-  Won time  -> if | inp.space && time > 1 -> startState
+  Won time  -> if | inp.space && time > 1 -> (rndStartState inp.rnd)
                   | otherwise -> Won (time + inp.delta)
+  Begin ->     if | inp.space -> (rndStartState inp.rnd)
+                  | otherwise -> Begin
   Game fieldstate -> 
     let newState = updateObjects inp fieldstate
     in if | (shipCollision newState) -> Lost 0
@@ -345,20 +359,20 @@ checkAsteroidBounce a1 a2 =
 asteroidBounce : AsteroidState -> AsteroidState -> (AsteroidState , AsteroidState)
 asteroidBounce a1 a2 = 
   let colA = atan2 (a1.y - a2.y) (a1.x - a2.x) -- collision angle
-  in let iv1x = a1.v * (cos (a1.dir - colA)) -- initial velocity a1 x
-         iv1y = a1.v * (sin (a1.dir - colA)) -- initial velocity a1 y
-         iv2x = a2.v * (cos (a2.dir - colA)) -- initial velocity a2 x
-         iv2y = a2.v * (sin (a2.dir - colA)) -- initial velocity a2 y
-     in let v1 = (sqrt (iv2x^2 + iv1y^2))
-            v2 = (sqrt (iv1x^2 + iv2y^2))
-            dir1 = (atan2 iv1y iv2x) + colA
-            dir2 = (atan2 iv2y iv1x) + colA
-        in moveAstroidsApart {a1 | v <- v1, dir <- dir1}
-                             {a2 | v <- v2, dir <- dir2}
+      iv1x = a1.v * (cos (a1.dir - colA)) -- initial velocity a1 x
+      iv1y = a1.v * (sin (a1.dir - colA)) -- initial velocity a1 y
+      iv2x = a2.v * (cos (a2.dir - colA)) -- initial velocity a2 x
+      iv2y = a2.v * (sin (a2.dir - colA)) -- initial velocity a2 y
+      v1 = (sqrt (iv2x^2 + iv1y^2))
+      v2 = (sqrt (iv1x^2 + iv2y^2))
+      dir1 = (atan2 iv1y iv2x) + colA
+      dir2 = (atan2 iv2y iv1x) + colA
+  in moveAstroidsApart {a1 | v <- v1, dir <- dir1}
+                       {a2 | v <- v2, dir <- dir2}
 
 moveAstroidsApart : AsteroidState -> AsteroidState -> (AsteroidState , AsteroidState)
 moveAstroidsApart a1 a2 = 
-  if | (objCollision a1 a2) -> moveAstroidsApart { a1 | x <- a1.x + cos(a1.dir) * a1.v * 1, y <- a1.y + sin(a1.dir) * a1.v * 1} { a2 | x <- a2.x + cos(a2.dir) * a2.v * 1, y <- a2.y + sin(a2.dir) * a2.v * 1}
+  if | (objCollision a1 a2) -> moveAstroidsApart { a1 | x <- a1.x + cos(a1.dir) * a1.v * 0.5, y <- a1.y + sin(a1.dir) * a1.v * 0.5} { a2 | x <- a2.x + cos(a2.dir) * a2.v * 0.5, y <- a2.y + sin(a2.dir) * a2.v * 0.5}
      | otherwise -> (a1, a2)
 
 -------------------------------------------------
