@@ -65,10 +65,10 @@ type Input = { x:Float, y:Float, space:Bool, delta:Float, rnd:Float }
 type FieldState = { ship:ShipState , 
                     asteroids:[ AsteroidState ],
                     bullets:[BulletState] }
-data GameState = Lost Float | 
-                 Won Float | 
+data GameState = Lost Float Int | 
+                 Won Float Int | 
                  Begin |
-                 Game FieldState
+                 Game FieldState Int
 
 
 pixelsPerSecond : Float
@@ -85,13 +85,13 @@ background = rect 500 500 |> filled black
 
 playingField : GameState  -> Element
 playingField state = case state of
-  Lost time       -> collage 500 500 [rect 500 500 |> filled red, 
-                                      endText "You Lost :("]
-  Won time        -> collage 500 500 [rect 500 500 |> filled green, 
-                                      endText "You Won :)"]
+  Lost time level -> collage 500 500 [rect 500 500 |> filled red, 
+                                      endText ("You Lost :(\nlevel: "++(show level))]
+  Won time level  -> collage 500 500 [rect 500 500 |> filled green, 
+                                      endText ("You Won :)\nlevel: "++(show level))]
   Begin           -> collage 500 500 [rect 500 500 |> filled blue, 
                                       endText "- Ready to play -"]
-  Game fieldstate -> collage 500 500 (listOfForms fieldstate)
+  Game fieldstate level -> collage 500 500 (listOfForms fieldstate)
 
 
 endText : String -> Form
@@ -171,26 +171,26 @@ lcg seed = let m = 2147483647
 startShipState  : ShipState 
 startShipState  = {x=0, y=0, v=0, dir=0, diam=8, timeLastBullet=0}
 
-rndStartState : Float -> GameState
-rndStartState seed =
-  let asteroids = rndAsteroids 20 seed []
+rndStartState : Float -> Int -> GameState
+rndStartState seed level =
+  let asteroids = rndAsteroids level (3 + (2*level)) seed []
   in Game {ship=startShipState, 
            asteroids=asteroids,
-           bullets=[]}
+           bullets=[]} level
 
-rndAsteroids : Int -> Float -> [AsteroidState] -> [AsteroidState] 
-rndAsteroids nb seed ass =
+rndAsteroids : Int -> Int -> Float -> [AsteroidState] -> [AsteroidState] 
+rndAsteroids level nb seed ass =
   if | nb == 0 -> ass
-     | otherwise -> let (a, rnd1) = rndAsteroid seed
-                    in rndAsteroids (nb-1) rnd1 (a::ass)
+     | otherwise -> let (a, rnd1) = rndAsteroid level seed
+                    in rndAsteroids level (nb-1) rnd1 (a::ass)
 
-rndAsteroid : Float -> (AsteroidState, Float)
-rndAsteroid seed = 
+rndAsteroid : Int -> Float -> (AsteroidState, Float)
+rndAsteroid level seed = 
   let (pos1, rnd1) = rndPos seed
       (pos2, rnd2) = rndPos rnd1
-      (v, rnd3) = rndRange 1 4 rnd2
+      (v, rnd3) = rndRange 1 (toFloat (2+level)) rnd2
       (dirDeg, rnd4) = rndRange 0 360 rnd3
-      (diam, rnd5) = rndRange 5 30 rnd4
+      (diam, rnd5) = rndRange 5 40 rnd4
   in ({x=pos1, y=pos2, v=v, dir=(degrees dirDeg), diam=diam}, rnd5)
 
 
@@ -211,6 +211,8 @@ rndRange from to seed =
   let rnd = lcg seed
   in ((from + (rnd * (to - from))), rnd)
 
+
+-- TODO: weg
 startState : GameState
 startState = Game {ship=startShipState , 
                    asteroids=[
@@ -219,21 +221,21 @@ startState = Game {ship=startShipState ,
                    {x=-50, y=50, v=4, dir=(degrees 36), diam=20},
                    {x=-50, y=50, v=4, dir=(degrees -348), diam=20},
                    {x=-100, y=-100, v=4, dir=(degrees 198), diam=20}],
-                   bullets=[]}
+                   bullets=[]} 1
 
 updateGame : Input -> GameState -> GameState
 updateGame inp state = case state of
-  Lost time -> if | inp.space && time > 1 -> (rndStartState inp.rnd)
-                  | otherwise -> Lost (time + inp.delta)
-  Won time  -> if | inp.space && time > 1 -> (rndStartState inp.rnd)
-                  | otherwise -> Won (time + inp.delta)
-  Begin ->     if | inp.space -> (rndStartState inp.rnd)
-                  | otherwise -> Begin
-  Game fieldstate -> 
+  Lost time level -> if | inp.space && time > 1 -> (rndStartState inp.rnd 1)
+                        | otherwise -> Lost (time + inp.delta) level
+  Won time level ->  if | inp.space && time > 1 -> (rndStartState inp.rnd (level + 1))
+                        | otherwise -> Won (time + inp.delta) level
+  Begin ->           if | inp.space -> (rndStartState inp.rnd 1)
+                        | otherwise -> Begin
+  Game fieldstate level -> 
     let newState = updateObjects inp fieldstate
-    in if | (shipCollision newState) -> Lost 0
-          | (isNoAstroidLeft newState) -> Won 0
-          | otherwise -> Game newState
+    in if | (shipCollision newState) -> Lost 0 level
+          | (isNoAstroidLeft newState) -> Won 0 level
+          | otherwise -> Game newState level
 
 
 isNoAstroidLeft : FieldState -> Bool
