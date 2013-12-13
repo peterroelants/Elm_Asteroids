@@ -294,20 +294,8 @@ checkAsteroidBounce a1 a2 =
   if | (objCollision a1 a2) -> (asteroidBounce a1 a2)
      | otherwise -> (a1, a2)
 
---asteroidBounce : AsteroidState -> AsteroidState -> (AsteroidState , AsteroidState)
---asteroidBounce a1 a2 = 
---  let colA = atan2 (a1.y - a2.y) (a1.x - a2.x) -- collision angle
---  in let iv1x = a1.v * (cos (a1.dir - colA)) -- initial velocity a1 x
---         iv1y = a1.v * (sin (a1.dir - colA)) -- initial velocity a1 y
---         iv2x = a2.v * (cos (a2.dir - colA)) -- initial velocity a2 x
---         iv2y = a2.v * (sin (a2.dir - colA)) -- initial velocity a2 y
---     in let v1 = (sqrt (iv2x^2 + iv1y^2))
---            v2 = (sqrt (iv1x^2 + iv2y^2))
---            dir1 = (atan2 iv1y iv2x) + colA
---            dir2 = (atan2 iv2y iv1x) + colA
---        in ({a1 | v <- v1, dir <- dir1, x <- a1.x + cos(dir1) * v1 * 0.1, y <- a1.y + sin(dir1) * v1 * 0.1}, 
---            {a2 | v <- v2, dir <- dir2, x <- a2.x + cos(dir2) * v2* 0.1, y <- a2.y + sin(dir2) * v2 * 0.1})
-
+-- info: http://www.hoomanr.com/Demos/Elastic2/
+-- http://en.wikipedia.org/wiki/Elastic_collision
 asteroidBounce : AsteroidState -> AsteroidState -> (AsteroidState , AsteroidState)
 asteroidBounce a1 a2 = 
   let colA = atan2 (a1.y - a2.y) (a1.x - a2.x) -- collision angle
